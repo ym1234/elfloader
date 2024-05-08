@@ -1,10 +1,11 @@
 import mmap
-import elf
+import elf2 as elf
 import ctypes
 from pprint import pprint
 from contextlib import closing
 
 pagesize = mmap.PAGESIZE
+print(mmap.ALLOCATIONGRANULARITY)
 
 libc = ctypes.cdll.LoadLibrary(None)
 lmmap = libc.mmap
@@ -15,9 +16,11 @@ mprotect = libc.mprotect
 mprotect.restype = ctypes.c_int
 mprotect.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.c_int)
 
-
+m = mmap.mmap(-1, 4096, access=mmap.ACCESS_WRITE)
+print(ctypes.c_char_p.from_buffer(m))
 with open('mainfp16.o') as f:
     mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_COPY)
+    print(ctypes.c_void_p.from_buffer(mm))
     hdr = elf.Elf64_Ehdr.from_buffer(mm)
     sections = (elf.Elf64_Shdr*hdr.e_shnum).from_buffer(mm, hdr.e_shoff)
     shstroff = sections[hdr.e_shstrndx].sh_offset
@@ -27,7 +30,7 @@ with open('mainfp16.o') as f:
     strtabhdr = sections[section_names['.strtab']]
 
     nsymbols = symtabhdr.sh_size // symtabhdr.sh_entsize
-    symbolinfo = (elf.Elf64_Sym*nsymbols).from_buffer(mm, symtabhdr.sh_offset);
+    symbolinfo = (elf.Elf64_Sym*nsymbols).from_buffer(mm, symtabhdr.sh_offset)
 
     symbols = {ctypes.string_at(mm[strtabhdr.sh_offset + s.st_name:]).decode('ascii'): i for i, s in enumerate(symbolinfo)}
     def load(name):
@@ -60,7 +63,9 @@ with open('mainfp16.o') as f:
         print(sum)
         print(allocs)
         print(relsections)
-        r = mmap.mmap(-1, len(allocs)*pagesize, mmap.MAP_PRIVATE, mmap.PROT_READ | mmap.PROT_WRITE)
+        r = mmap.mmap(-1, len(allocs)*pagesize, access=mmap.ACCESS_COPY)
+        # r[0] = 10
+        # print(r[0])
 
         ma = {}
         for i, m in enumerate(allocs):
@@ -73,7 +78,11 @@ with open('mainfp16.o') as f:
                 start = (start + 7) & -8
             print(start)
 
-        print(ctypes.c_void_p.from_buffer(r), m)
+        p = ctypes.c_void_p(ctypes.addressof(ctypes.c_char.from_buffer(r)))
+        print(p)
+        # p = ctypes.POINTER(ctypes.c_char).from_buffer(r)
+        # print(p.value)
+        # print(ctypes.c_char_p.from_buffer(r), m)
         load_start = m[section_names[name]]
         for rel in relocations:
             rel.r_offset
