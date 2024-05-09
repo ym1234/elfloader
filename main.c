@@ -28,8 +28,14 @@
 /*   } */
 /* } */
 
-extern void foo(void);
+/* int main() { */
+/*   foo(); */
+/* } */
 
-int main() {
-  foo();
+void r_10_10(float* restrict data0) {
+  for (int ridx0 = 0; ridx0 < 10; ridx0++) {
+    int acc0 = 1;
+    int alu0 = (ridx0*(-1));
+    data0[ridx0] = (1+((alu0<0)?1:0)+((alu0<(-1))?1:0)+((alu0<(-2))?1:0)+((alu0<(-3))?1:0)+((alu0<(-4))?1:0)+((alu0<(-5))?1:0)+((alu0<(-6))?1:0)+((alu0<(-7))?1:0)+((alu0<(-8))?1:0)+acc0+(-1));
+  }
 }
