@@ -27,11 +27,11 @@ malloc = libc.malloc
 malloc.restype = ctypes.c_void_p
 malloc.argtypes = (ctypes.c_size_t,)
 
+# This doesn't work, the return is in rax and we need it xmm0
 @ctypes.CFUNCTYPE(ctypes.c_uint16, ctypes.c_double)
 def __truncdfhf2(x):
-    print(x)
-    print("HERE")
-    return 1
+    return 3
+    # return x
 
 libs = {"__truncdfhf2": __truncdfhf2}
 
@@ -104,6 +104,7 @@ with open(file) as f:
             print("INFO", info.st_shndx)
             if info.st_shndx == 0:
                 # lib = ctypes.addressof()
+                print(g)
                 lib = ctypes.cast(libs[list(symbols.keys())[g]], ctypes.c_void_p).value
                 print('lib', hex(lib))
             else:
@@ -143,11 +144,13 @@ with open(file) as f:
         ptr, readonly = f.__array_interface__['data']
         ptr2, readonly2 = f16.__array_interface__['data']
         print(readonly, readonly2)
+        print(hex(ptr), hex(ptr2))
         func = symbolinfo[symbols['copy']].st_value
         print("func addr", hex(load_start + func))
-        cfunc = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p)(load_start + func)
+        cfunc = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)(load_start + func)
         cfunc(ptr, ptr2)
         # a = np.frombuffer(ptr2, np.float16)
+        print(f)
         print(f16)
 
     pprint(symbols)
