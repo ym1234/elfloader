@@ -27,6 +27,14 @@ malloc = libc.malloc
 malloc.restype = ctypes.c_void_p
 malloc.argtypes = (ctypes.c_size_t,)
 
+@ctypes.CFUNCTYPE(ctypes.c_uint16, ctypes.c_double)
+def __truncdfhf2(x):
+    print(x)
+    print("HERE")
+    return 1
+
+libs = {"__truncdfhf2": __truncdfhf2}
+
 file = sys.argv[1]
 with open(file) as f:
     mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_COPY)
@@ -58,27 +66,27 @@ with open(file) as f:
                 got.append(sidx)
             if symbolinfo[sidx].st_shndx not in relsections:
                 relsections.append(symbolinfo[sidx].st_shndx)
-            # print(ctypes.string_at(mm[strtabhdr.sh_offset + symbolinfo[sidx].st_name:]).decode('ascii'), ts)
-            # print(sidx, ts)
-            # pass
+
+        alignment = 64
         print(got)
         allocs = [[section_names[name]]]
         sum = section.sh_size
         for s in relsections:
-            # print(s, sum)
-            # if sum + sections[s].sh_size < pagesize:
-            #     allocs[-1].append(s)
-            #     sum += sections[s].sh_size
-            #     sum = (sum + 7) & -8
-            # else:
-            allocs.append([])
-            allocs[-1].append(s)
-            # sum = (sections[s].sh_size + 7) & -8
+            print(s, sum)
+            if sum + sections[s].sh_size < pagesize:
+                allocs[-1].append(s)
+                sum += sections[s].sh_size
+                sum = (sum + alignment - 1) & -alignment
+            else:
+                allocs.append([])
+                allocs[-1].append(s)
+                sum = (sections[s].sh_size + alignment -1) & -alignment
 
-        r = mmap.mmap(-1, len(allocs)*pagesize, access=mmap.ACCESS_WRITE)
-
+        r = mmap.mmap(-1, (len(allocs)+1)*pagesize, access=mmap.ACCESS_WRITE)
         ma = {}
         p = ctypes.addressof(ctypes.c_char.from_buffer(r))
+        got_address = p + len(allocs)*pagesize
+        print(hex(got_address))
         for i, m in enumerate(allocs):
             start = i * pagesize
             for s in m:
@@ -86,33 +94,61 @@ with open(file) as f:
                 offset, size = sections[s].sh_offset, sections[s].sh_size
                 ctypes.memmove(p+start, mm[offset:], size)
                 start += size
-                start = (start + 7) & -8
-        print(ma)
+                start = (start + alignment - 1) & -alignment
+
+        got_sym_address = {}
+        # got_table =  (ctypes.c_uint64*(4096//8)).from_buffer(r[got_address:])
+        got_table = ctypes.cast(got_address, ctypes.POINTER(ctypes.c_uint64*(4096//8)))
+        for i, g in enumerate(got):
+            info = symbolinfo[g]
+            print("INFO", info.st_shndx)
+            if info.st_shndx == 0:
+                # lib = ctypes.addressof()
+                lib = ctypes.cast(libs[list(symbols.keys())[g]], ctypes.c_void_p).value
+                print('lib', hex(lib))
+            else:
+                lib = ma[info.st_shndx] + info.st_value
+            got_table.contents[i] = lib
+            got_sym_address[g] = i*8
+        print(got_table.contents)
+        print(got_sym_address)
+
+
+        # print(ma)
 
         load_start = ma[section_names[name]]
         for rel in relocations:
             sidx = rel.r_info >> 32
             ts = rel.r_info & 0xffffffff
             symbol = symbolinfo[sidx]
-            saddress = ma[symbol.st_shndx] + symbol.st_value
-            print(hex(ma[symbol.st_shndx]))
             mem = ctypes.cast(load_start + rel.r_offset, ctypes.POINTER(ctypes.c_int32))
-            mem.contents.value = saddress + rel.r_addend - (load_start + rel.r_offset)
-            print(hex(saddress + rel.r_addend - (load_start + rel.r_offset)))
+            if ts == elf.R_X86_64_PC32:
+                saddress = ma[symbol.st_shndx] + symbol.st_value
+                print(hex(ma[symbol.st_shndx]))
+                mem.contents.value = saddress + rel.r_addend - (load_start + rel.r_offset)
+                print(hex(saddress + rel.r_addend - (load_start + rel.r_offset)))
+            elif ts == elf.R_X86_64_REX_GOTPCRELX:
+                mem.contents.value = got_sym_address[sidx] + got_address + rel.r_addend - (load_start + rel.r_offset)
+                print(hex(got_sym_address[sidx] + got_address + rel.r_addend - (load_start + rel.r_offset)))
+
 
         result = mprotect(load_start, len(allocs)*pagesize, mmap.PROT_READ | mmap.PROT_EXEC, 0)
         if result < 0:
             print("failed")
 
-        # ptr = malloc(10*4)
-        ptr = ctypes.create_string_buffer(1024)
-        func = symbolinfo[symbols['r_10_10']].st_value
-        print(load_start + func)
-        cfunc = ctypes.CFUNCTYPE(ctypes.c_void_p)(load_start + func)
-        cfunc(ptr)
-        # buffer = np.core.multiarray.int_asbuffer(ctypes.addressof(ctypes.addressof(ptr.contents)), 4*10)
-        a = np.frombuffer(ptr, np.float32)
-        print(a)
+        # ptr = ctypes.create_string_buffer(1024)
+        # ptr2 = ctypes.create_string_buffer(1024)
+        f = np.arange(1, 11, dtype=np.float64)
+        f16 = np.zeros(10, dtype=np.float16)
+        ptr, readonly = f.__array_interface__['data']
+        ptr2, readonly2 = f16.__array_interface__['data']
+        print(readonly, readonly2)
+        func = symbolinfo[symbols['copy']].st_value
+        print("func addr", hex(load_start + func))
+        cfunc = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p)(load_start + func)
+        cfunc(ptr, ptr2)
+        # a = np.frombuffer(ptr2, np.float16)
+        print(f16)
 
     pprint(symbols)
     load('.text')
